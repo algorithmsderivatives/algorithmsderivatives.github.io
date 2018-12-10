@@ -1,73 +1,16 @@
-//#include "Platform.h"
-#include "CellUtils.h"
-//#include "Strict.h"
 
-#include "DateUtils.h"
-#include "DateTimeUtils.h"
+#include "Date.h"
 
 
-bool Cell::CanConvert(const Cell_& c, const Cell::types_t& allowed)
+class String_;
+class Date_;
+
+namespace Date
 {
-	static const int MIN_DATE = Date::ToExcel(Date::Minimum());
-	static const int MAX_DATE = Date::ToExcel(Date::Maximum());
+	bool IsDateString(const String_& src);	// predicts whether FromString will work -- examines format only
+	Date_ FromString(const String_& src);	// tries our best to recognize the string -- rejects both mm/dd/yyyy and dd/mm/yyyy due to ambiguity
+	int MonthFromFutureCode(char code);
 
-	auto ok = [&](const Cell_::Type_& t){ return allowed[static_cast<int>(t)]; };
-	switch (c.type_)	// look at the type we have, see if there is an ok conversion available
-	{
-	case Cell_::Type_::NUMBER:
-		if (ok(Cell_::Type_::DATETIME) || (ok(Cell_::Type_::DATE) && c.d_ == static_cast<int>(c.d_)))
-			if (c.d_ >= MIN_DATE && c.d_ <= MAX_DATE)
-				return true;
-		break;
-	case Cell_::Type_::STRING:
-		if (ok(Cell_::Type_::DATETIME) && DateTime::IsDateTimeString(c.s_))
-			return true;
-		if (ok(Cell_::Type_::DATE) && Date::IsDateString(c.s_))
-			return true;
-		break;
-	}
-	return false;
-}
-
-String_ Cell::CoerceToString(const Cell_& src)
-{
-	if (Cell::IsString(src))
-		return Cell::OwnString(src);
-	if (Cell::IsBool(src))
-		return Cell::ToBool(src) ? "true" : "false";
-	if (Cell::IsInt(src))
-		return String::FromInt(Cell::ToInt(src));
-	if (Cell::IsDouble(src))
-		return String::FromDouble(Cell::ToDouble(src));
-	if (Cell::IsDate(src))
-		return Date::ToString(Cell::ToDate(src));
-	if (Cell::IsDateTime(src))
-		return DateTime::ToString(Cell::ToDateTime(src));
-	assert(Cell::IsEmpty(src) || !"Unreachable -- bad cell type");
-	return String_();
-}
-
-Cell_ Cell::FromOptionalDouble(const boost::optional<double>& src)
-{
-	return src ? FromDouble(src.get()) : Cell_();
-}
-
-Cell_ Cell::ConvertString(const String_& src)
-{
-	if (src.empty())
-		return Cell_();
-	if (String::IsNumber(src))
-		return String::ToDouble(src);
-	if (Date::IsDateString(src))
-		return Date::FromString(src);
-	if (DateTime::IsDateTimeString(src))
-		return DateTime::FromString(src);
-	// does this logic merit an Enumeration?
-	if (src == "TRUE")
-		return Cell_(true);
-	if (src == "FALSE")
-		return Cell_(false);
-	// sometimes a string is just a string
-	return src;
-}
-
+	double DDate(const Date_& t, const Date_& from); //Y
+	Vector_<> DDate(const Vector_<Date_>& dates, const Date_& from); //Y
+} // Date
