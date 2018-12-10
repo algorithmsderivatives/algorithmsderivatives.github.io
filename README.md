@@ -1,114 +1,42 @@
+// Utilities for Cell and Table
+
+#pragma once
+
+#include <bitset>
 #include "Cell.h"
-//#include "Strict.h"
-
-#include "Vectors.h"
-#include "Exceptions.h"
-#include "Numerics.h"
-#include "StringUtils.h"
+#include "Optionals.h"
 
 
-String_ Cell::OwnString(const Cell_& src)
+namespace Cell
 {
-	switch (src.type_)
+	typedef std::bitset<static_cast<int>(Type_::N_TYPES)> types_t;
+	bool CanConvert(const Cell_& c, const types_t& allowed);
+	struct TypeCheck_
 	{
-	case Cell::Type_::STRING:
-		return src.s_;
-	}
-	THROW("Cell must contain a string value");
-}
+		types_t ret_;
 
-double Cell::ToDouble(const Cell_& src)
-{
-	switch (src.type_)
-	{
-	case Cell::Type_::NUMBER:
-		return src.d_;
-	case Cell::Type_::BOOLEAN:
-		return src.b_ ? 1 : 0;
-	default:
-		THROW("Cell must contain a numeric value");
-	}
-}
+	   TypeCheck_ Add(const Type_& bit) const
+	   {
+		  TypeCheck_ ret(*this); ret.ret_.set(static_cast<int>(bit)); return ret;
+	   }
+	   TypeCheck_ String() const { return Add(Type_::STRING); }
+	   TypeCheck_ Number() const { return Add(Type_::NUMBER); }
+	   TypeCheck_ Date() const { return Add(Type_::DATE); }
+	   TypeCheck_ DateTime() const { return Add(Type_::DATETIME); }
+	   TypeCheck_ Boolean() const { return Add(Type_::BOOLEAN); }
+	   TypeCheck_ Empty() const { return Add(Type_::EMPTY); }
 
-bool Cell::IsInt(const Cell_& src)
-{
-	return Cell::IsDouble(src)
-		&& AsInt(src.d_) == src.d_;
-}
+	   bool operator()(const Cell_& c) const
+	   {
+		   return ret_[static_cast<int>(c.type_)]	// already the right type
+			   || CanConvert(c, ret_);
+	   }
+	};
 
-int Cell::ToInt(const Cell_& src)
-{
-	const double d = ToDouble(src);
-	const int retval = AsInt(d);
-	REQUIRE(retval == d, "Cell must contain an integer value");
-	return retval;
-}
+	Cell_ ConvertString(const String_& src);
+	String_ CoerceToString(const Cell_& src);
+	Cell_ FromOptionalDouble(const boost::optional<double>& src);
 
-bool Cell::ToBool(const Cell_& src)
-{
-	switch (src.type_)
-	{
-	case Cell::Type_::BOOLEAN:
-		return src.b_;
-	default:
-		THROW("Cell must contain a boolean value");
-	}
+	template<class T_> T_ ToEnum(const Cell_& src) { return T_(CoerceToString(src)); }	// this implementation means we accept non-string values, converting to strings
+	template<class T_> Cell_ FromEnum(const T_& src) { return Cell_(String_(src.String())); }
 }
-
-Date_ Cell::ToDate(const Cell_& src)
-{
-	switch (src.type_)
-	{
-	case Cell::Type_::DATE:
-		return src.dt_.Date();
-	case Cell::Type_::NUMBER:
-		return Date::FromExcel(ToInt(src));
-	default:
-		THROW("Cell must contain a date value");
-	}
-}
-
-DateTime_ Cell::ToDateTime(const Cell_& src)
-{
-	switch (src.type_)
-	{
-	case Cell::Type_::DATETIME:
-		return src.dt_;
-	case Cell::Type_::NUMBER:
-	{
-		NOTE("Interpreting number as datetime");
-		int dt = AsInt(src.d_);
-		return DateTime_(Date::FromExcel(dt), src.d_ - dt);
-	}
-	default:
-		THROW("Cell must contain a datetime value");
-	}
-}
-
-Vector_<bool> Cell::ToBoolVector(const Cell_& src)
-{
-	switch (src.type_)
-	{
-	case Cell::Type_::BOOLEAN:
-		return Vector_<bool>(1, src.b_);
-	case Cell::Type_::STRING:
-		return String::ToBoolVector(src.s_);
-	default:
-		THROW("Cell is not convertible to vector of booleans");
-	}
-}
-
-Cell_ Cell::FromBoolVector(const Vector_<bool>& src)
-{
-	String_ temp;
-	for (const auto& b : src)
-		temp.push_back(b ? 'T' : 'F');
-	return Cell_(temp);
-}
-
-bool operator==(const Cell_& lhs, const String_& rhs)
-{
-	return lhs.type_ == Cell::Type_::STRING
-		&& lhs.s_ == rhs;
-}
-
