@@ -1,25 +1,18 @@
 
-int AsInt(double src);
-int AsInt(std::ptrdiff_t src);
-int NearestInt(double src);
-
-template<class C_, class OP_> auto Accumulate2(const C_& src, const OP_& op) -> decltype(op(0, *src.begin()))
+int AsInt(double src)
 {
-	return std::accumulate(src.begin(), src.end(), decltype(op(0, *src.begin()))(0), op);
-}
-template<class C_> typename C_::value_type Accumulate(const C_& src)
-{
-	return Accumulate2(src, std::plus<typename C_::value_type>());
+	REQUIRE(fabs(src) < 1e9, "Number is too large to be an integer");
+	return static_cast<int>(src + (src > 0 ? 1e-9 : -1e-9));
 }
 
-template<class C1_, class C2_> typename C1_::value_type InnerProduct(const C1_& src1, const C2_& src2)
+int NearestInt(double src)
 {
-	typedef typename C1_::value_type value_type;
-	return std::inner_product(src1.begin(), src1.end(), src2.begin(), value_type());
+	REQUIRE(fabs(src) < 1e9, "Number is too large to be an integer");
+	return static_cast<int>(src + (src > 0 ? 0.5 : -0.5));
 }
 
-namespace Vector
+int AsInt(std::ptrdiff_t src)
 {
-	Vector_<> L1Normalized(const Vector_<>& base);
-	Vector_<> L2Normalized(const Vector_<>& base);
+	REQUIRE(abs(src) < 1e9, "32-bit integer overflow");
+	return static_cast<int>(src);
 }
