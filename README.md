@@ -1,98 +1,114 @@
-namespace Cell
+#include "Cell.h"
+//#include "Strict.h"
+
+#include "Vectors.h"
+#include "Exceptions.h"
+#include "Numerics.h"
+#include "StringUtils.h"
+
+
+String_ Cell::OwnString(const Cell_& src)
 {
-	enum class Type_ : char
+	switch (src.type_)
 	{
-		EMPTY,
-		BOOLEAN,
-		NUMBER,
-		DATE,
-		DATETIME,
-		STRING,
-		N_TYPES
-	};
+	case Cell::Type_::STRING:
+		return src.s_;
+	}
+	THROW("Cell must contain a string value");
 }
 
-struct Cell_
+double Cell::ToDouble(const Cell_& src)
 {
-	typedef Cell::Type_ Type_;
-	Type_ type_;
-	bool b_;
-	double d_;
-	String_ s_;
-	DateTime_ dt_;
-
-	Cell_() : type_(Type_::EMPTY) {}
-	Cell_(bool b) : type_(Type_::BOOLEAN), b_(b) {}
-	Cell_(double d) : type_(Type_::NUMBER), d_(d) {}
-	Cell_(const Date_& dt) : type_(Type_::DATE), dt_(dt, 0) {}
-	Cell_(const DateTime_& dt) : type_(Type_::DATETIME), dt_(dt) {}
-	Cell_(const String_& s) : type_(Type_::STRING), s_(s) {}
-	Cell_(const char* s) : type_(Type_::STRING), s_(s)	{}	// otherwise pointer can be converted to boolean
-	template<class T_> Cell_(const T_* p) { static_assert(false); }	// unrecognized pointer type, hides ptr-to-bool conversion
-
-	void Clear() { type_ = Type_::EMPTY; }
-	Cell_& operator=(bool b) { type_ = Type_::BOOLEAN; b_ = b; return *this; }
-	Cell_& operator=(int i) { type_ = Type_::NUMBER; d_ = i; return *this; }
-	Cell_& operator=(double d) { type_ = Type_::NUMBER; d_ = d; return *this; }
-	Cell_& operator=(const Date_& dt) { type_ = Type_::DATE; dt_ = DateTime_(dt, 0); return *this; }
-	Cell_& operator=(const DateTime_& dt) { type_ = Type_::DATETIME; dt_ = dt; return *this; }
-	Cell_& operator=(const String_& s) { type_ = Type_::STRING; s_ = s; return *this; }
-	Cell_& operator=(const char* s) { type_ = Type_::STRING; s_ = s; return *this; }
-
-	Cell_& operator=(const Cell_& rhs)
+	switch (src.type_)
 	{
-		switch (rhs.type_)
-		{
-		case Type_::BOOLEAN:
-			return operator=(rhs.b_);
-		case Type_::NUMBER:
-			return operator=(rhs.d_);
-		case Type_::STRING:
-			return operator=(rhs.s_);
-		case Type_::DATE:
-			return operator=(rhs.dt_.Date());
-		case Type_::DATETIME:
-			return operator=(rhs.dt_);
-		default:
-			assert(rhs.type_ == Type_::EMPTY);
-			Clear();
-		}
-		return *this;
+	case Cell::Type_::NUMBER:
+		return src.d_;
+	case Cell::Type_::BOOLEAN:
+		return src.b_ ? 1 : 0;
+	default:
+		THROW("Cell must contain a numeric value");
 	}
-};
+}
 
-bool operator==(const Cell_& lhs, const String_& rhs);
-inline bool operator==(const String_& lhs, const Cell_& rhs) { return rhs == lhs; }
-
-namespace Cell
+bool Cell::IsInt(const Cell_& src)
 {
-	inline bool IsEmpty(const Cell_& cell) { return cell.type_ == Type_::EMPTY || (cell.type_ == Type_::STRING && cell.s_.empty()); }
+	return Cell::IsDouble(src)
+		&& AsInt(src.d_) == src.d_;
+}
 
-	inline bool IsString(const Cell_& src) { return src.type_ == Cell::Type_::STRING; }
-	String_ OwnString(const Cell_& src);	// throws on non-string values; see also CoerceToString
-	inline Cell_ FromString(const String_& src) { return Cell_(src); }
+int Cell::ToInt(const Cell_& src)
+{
+	const double d = ToDouble(src);
+	const int retval = AsInt(d);
+	REQUIRE(retval == d, "Cell must contain an integer value");
+	return retval;
+}
 
-	inline bool IsDouble(const Cell_& src) { return src.type_ == Cell::Type_::NUMBER; }
-	double ToDouble(const Cell_& src);	// throws on non-numeric values
-	inline Cell_ FromDouble(double src) { return Cell_(src); }
+bool Cell::ToBool(const Cell_& src)
+{
+	switch (src.type_)
+	{
+	case Cell::Type_::BOOLEAN:
+		return src.b_;
+	default:
+		THROW("Cell must contain a boolean value");
+	}
+}
 
-	bool IsInt(const Cell_& src);
-	int ToInt(const Cell_& src);	// throws on non-integer values
-	inline Cell_ FromInt(int src) { return Cell_(double(src)); }
+Date_ Cell::ToDate(const Cell_& src)
+{
+	switch (src.type_)
+	{
+	case Cell::Type_::DATE:
+		return src.dt_.Date();
+	case Cell::Type_::NUMBER:
+		return Date::FromExcel(ToInt(src));
+	default:
+		THROW("Cell must contain a date value");
+	}
+}
 
-	inline bool IsBool(const Cell_& src) { return src.type_ == Cell::Type_::BOOLEAN; }
-	bool ToBool(const Cell_& src);	// throws on non-boolean values
-	inline Cell_ FromBool(bool src) { return Cell_(src); }
+DateTime_ Cell::ToDateTime(const Cell_& src)
+{
+	switch (src.type_)
+	{
+	case Cell::Type_::DATETIME:
+		return src.dt_;
+	case Cell::Type_::NUMBER:
+	{
+		NOTE("Interpreting number as datetime");
+		int dt = AsInt(src.d_);
+		return DateTime_(Date::FromExcel(dt), src.d_ - dt);
+	}
+	default:
+		THROW("Cell must contain a datetime value");
+	}
+}
 
-	inline bool IsDate(const Cell_& src) { return src.type_ == Cell::Type_::DATE; }
-	Date_ ToDate(const Cell_& src);	// throws on non-date values
-	inline Cell_ FromDate(const Date_& src) { return Cell_(src); }
+Vector_<bool> Cell::ToBoolVector(const Cell_& src)
+{
+	switch (src.type_)
+	{
+	case Cell::Type_::BOOLEAN:
+		return Vector_<bool>(1, src.b_);
+	case Cell::Type_::STRING:
+		return String::ToBoolVector(src.s_);
+	default:
+		THROW("Cell is not convertible to vector of booleans");
+	}
+}
 
-	inline bool IsDateTime(const Cell_& src) { return src.type_ == Cell::Type_::DATETIME; }
-	DateTime_ ToDateTime(const Cell_& src);	// throws on non-time values (including date w/o time)
-	inline Cell_ FromDateTime(const DateTime_& src) { return Cell_(src); }
+Cell_ Cell::FromBoolVector(const Vector_<bool>& src)
+{
+	String_ temp;
+	for (const auto& b : src)
+		temp.push_back(b ? 'T' : 'F');
+	return Cell_(temp);
+}
 
-	Vector_<bool> ToBoolVector(const Cell_& src);	// accepts single boolean, or String_
-	Cell_ FromBoolVector(const Vector_<bool>& src);
+bool operator==(const Cell_& lhs, const String_& rhs)
+{
+	return lhs.type_ == Cell::Type_::STRING
+		&& lhs.s_ == rhs;
 }
 
