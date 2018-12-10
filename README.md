@@ -1,42 +1,73 @@
-// Utilities for Cell and Table
+//#include "Platform.h"
+#include "CellUtils.h"
+//#include "Strict.h"
 
-#pragma once
-
-#include <bitset>
-#include "Cell.h"
-#include "Optionals.h"
+#include "DateUtils.h"
+#include "DateTimeUtils.h"
 
 
-namespace Cell
+bool Cell::CanConvert(const Cell_& c, const Cell::types_t& allowed)
 {
-	typedef std::bitset<static_cast<int>(Type_::N_TYPES)> types_t;
-	bool CanConvert(const Cell_& c, const types_t& allowed);
-	struct TypeCheck_
+	static const int MIN_DATE = Date::ToExcel(Date::Minimum());
+	static const int MAX_DATE = Date::ToExcel(Date::Maximum());
+
+	auto ok = [&](const Cell_::Type_& t){ return allowed[static_cast<int>(t)]; };
+	switch (c.type_)	// look at the type we have, see if there is an ok conversion available
 	{
-		types_t ret_;
-
-	   TypeCheck_ Add(const Type_& bit) const
-	   {
-		  TypeCheck_ ret(*this); ret.ret_.set(static_cast<int>(bit)); return ret;
-	   }
-	   TypeCheck_ String() const { return Add(Type_::STRING); }
-	   TypeCheck_ Number() const { return Add(Type_::NUMBER); }
-	   TypeCheck_ Date() const { return Add(Type_::DATE); }
-	   TypeCheck_ DateTime() const { return Add(Type_::DATETIME); }
-	   TypeCheck_ Boolean() const { return Add(Type_::BOOLEAN); }
-	   TypeCheck_ Empty() const { return Add(Type_::EMPTY); }
-
-	   bool operator()(const Cell_& c) const
-	   {
-		   return ret_[static_cast<int>(c.type_)]	// already the right type
-			   || CanConvert(c, ret_);
-	   }
-	};
-
-	Cell_ ConvertString(const String_& src);
-	String_ CoerceToString(const Cell_& src);
-	Cell_ FromOptionalDouble(const boost::optional<double>& src);
-
-	template<class T_> T_ ToEnum(const Cell_& src) { return T_(CoerceToString(src)); }	// this implementation means we accept non-string values, converting to strings
-	template<class T_> Cell_ FromEnum(const T_& src) { return Cell_(String_(src.String())); }
+	case Cell_::Type_::NUMBER:
+		if (ok(Cell_::Type_::DATETIME) || (ok(Cell_::Type_::DATE) && c.d_ == static_cast<int>(c.d_)))
+			if (c.d_ >= MIN_DATE && c.d_ <= MAX_DATE)
+				return true;
+		break;
+	case Cell_::Type_::STRING:
+		if (ok(Cell_::Type_::DATETIME) && DateTime::IsDateTimeString(c.s_))
+			return true;
+		if (ok(Cell_::Type_::DATE) && Date::IsDateString(c.s_))
+			return true;
+		break;
+	}
+	return false;
 }
+
+String_ Cell::CoerceToString(const Cell_& src)
+{
+	if (Cell::IsString(src))
+		return Cell::OwnString(src);
+	if (Cell::IsBool(src))
+		return Cell::ToBool(src) ? "true" : "false";
+	if (Cell::IsInt(src))
+		return String::FromInt(Cell::ToInt(src));
+	if (Cell::IsDouble(src))
+		return String::FromDouble(Cell::ToDouble(src));
+	if (Cell::IsDate(src))
+		return Date::ToString(Cell::ToDate(src));
+	if (Cell::IsDateTime(src))
+		return DateTime::ToString(Cell::ToDateTime(src));
+	assert(Cell::IsEmpty(src) || !"Unreachable -- bad cell type");
+	return String_();
+}
+
+Cell_ Cell::FromOptionalDouble(const boost::optional<double>& src)
+{
+	return src ? FromDouble(src.get()) : Cell_();
+}
+
+Cell_ Cell::ConvertString(const String_& src)
+{
+	if (src.empty())
+		return Cell_();
+	if (String::IsNumber(src))
+		return String::ToDouble(src);
+	if (Date::IsDateString(src))
+		return Date::FromString(src);
+	if (DateTime::IsDateTimeString(src))
+		return DateTime::FromString(src);
+	// does this logic merit an Enumeration?
+	if (src == "TRUE")
+		return Cell_(true);
+	if (src == "FALSE")
+		return Cell_(false);
+	// sometimes a string is just a string
+	return src;
+}
+
