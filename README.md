@@ -1,81 +1,167 @@
-//#include "Platform.h"
-#include "DateTimeUtils.h"
-//#include "Strict.h"
 
+#include "Vector.h"
 #include "Algorithms.h"
-#include "DateTime.h"
-#include "DateUtils.h"
-#include "Exception.h"
 
 
 
-bool DateTime::IsDateTimeString(const String_& src)
+#define _ENV const Environment_* _env
+#define XX_ENV_ADD(u, e) Environment::XDecorated_ __xee##u(_env, e)
+#define X_ENV_ADD(u, e) XX_ENV_ADD(u, e)
+#define ENV_ADD(e) X_ENV_ADD(__COUNTER__, e)
+#define ENV_SEED(e) _ENV = nullptr; ENV_ADD(e)
+// support ADD and SEED with stack-constructed entries
+#define XX_ENV_INST(u, t) t __ei##u; ENV_ADD(__ei##u)
+#define X_ENV_INST(u, t) XX_ENV_INST(u, t)
+#define ENV_ADD_TYPE(t) X_ENV_INST(__COUNTER__, t)
+#define ENV_SEED_TYPE(t) _ENV = nullptr; ENV_ADD_TYPE(t)
+// and with factory-constructed entries (macro argument is the factory function)
+#define XX_ENV_FACT(u, f) scoped_ptr<Environment::Entry_> __ep##u(f); ENV_ADD(*__ep##u)
+#define X_ENV_FACT(u, f) XX_ENV_FACT(u, f)
+#define ENV_ADD_PTR(f) X_ENV_FACT(__COUNTER__, f)
+#define ENV_SEED_PTR(f) _ENV = nullptr; ENV_ADD_PTR(f)
+
+
+namespace Environment
 {
-	// I fear this is going to be a performance bottleneck
-	auto space = src.find(' ');
-	if (space == String_::npos)
-		return false;
-	if (!Date::IsDateString(src.substr(0, space)))
-		return false;
-	// accept anything with a date, space, something, colon, something
-	auto colon = src.find(':', space);
-	return colon != String_::npos
-			&& colon > space + 1
-			&& colon + 1 < src.size();
-}
-
-DateTime_ DateTime::FromString(const String_& src)
-{
-	NOTICE(src);
-	auto space = src.find(' ');
-	const Date_ date = Date::FromString(src.substr(0, space));
-	if (space == String_::npos)
-		return DateTime_(date, 0);
-	// split remainder on ':'
-	Vector_<String_> tParts = String::Split(src.substr(space + 1), ':', true);
-	REQUIRE(tParts.size() >= 2 && tParts.size() <= 3, "Expected hh:mm or hh:mm:ss time");
-	Vector_<int> hms = Apply(String::ToInt, tParts);
-	REQUIRE(*MinElement(hms) >= 0 && hms[0] < 24 && *MaxElement(hms) < 60, "Hour/minute/second out of bounds");
-	return DateTime_(date, hms[0], hms[1], hms.size() > 2 ? hms[2] : 0);
-}
-
-
-double DateTime::DDate(const DateTime_& t, const DateTime_& from) //Y
-{
-	return (NumericValueOf(t) - NumericValueOf(from)) / 365.0;
-}
-
-namespace
-{
-	struct DDate_ : std::unary_function<DateTime_, double> //Y
+	struct Entry_ : noncopyable
 	{
-		const DateTime_ from_;
-		DDate_(const DateTime_& from) : from_(from) {}
-		double operator()(const DateTime_& t)
-		{
-			return DateTime::DDate(t, from_);
-		}
+		virtual ~Entry_();
 	};
 }
-Vector_<> DateTime::DDate(const Vector_<DateTime_>& dates, const DateTime_& from) //Y
-{
-	return Apply(DDate_(from), dates);
-}
 
-DateTime_ DateTime::FromDuration(const DateTime_& start, const double duration) //Y
+class Environment_ : noncopyable
 {
-	return DateTime_(start.Date().AddDays(static_cast<int>(365 * duration + 0.5)));
-}
+public:
+	virtual ~Environment_();
 
-Vector_<DateTime_> DateTime::FromDurations(const DateTime_& start, const Vector_<>& durations) //Y
-{
-	//return Apply(boost::bind(&Time::FromDuration, start, _1), durations);
-	return Apply([&](const double duration){ return FromDuration(start, duration); }, durations);
-}
+	typedef Environment::Entry_ Entry_;
+	struct IterImp_ : noncopyable
+	{
+		virtual ~IterImp_();
+		virtual bool Valid() const = 0;
+		virtual IterImp_* Next() const = 0;
+		virtual const Entry_& operator*() const = 0;
+	};
+	struct Iterator_
+	{
+		Handle_<IterImp_> imp_;
+		Iterator_(IterImp_* orphan) : imp_(orphan) {}
+		bool IsValid() const { return imp_.get() != 0; }
+		void operator++();
+		const Entry_& operator*() const { return **imp_; }
+	};
 
-DateTime_ DateTime::AddMSec(const DateTime_& t, long long msec)
+	virtual IterImp_* XBegin() const = 0;
+	Iterator_ Begin() const { return Iterator_(XBegin()); }
+};
+
+namespace Environment
 {
-	long long msecOld = DateTime::MSec(t);
-	msec += msecOld;
-	return DateTime_(msec);
+	// most generic iterator through entries
+	template<typename F_> void Iterate
+		(const Environment_* env, F_& func)
+	{
+		if (env)
+			for (auto pe = env->Begin(); pe.IsValid(); ++pe)
+				func(*pe);
+	}
+
+	// collect entries of a specific type (we do not own the returned pointers)
+	template<typename T_> Vector_<const T_*> Collect
+		(const Environment_* env)
+	{
+		Vector_<const T_*> retval;
+		Iterate(env, [&](const Handle_<Entry_>& h)
+		{if (dyn_ptr(t, const T_*, h.get()))
+		retval.push_back(t); });
+		return retval;
+	}
+
+	// short-circuit iteration, stops when it finds a value convertible to true
+	template<typename F_> auto Find
+		(const Environment_* env, F_& func) -> decltype(func(*env->Begin()))
+	{
+		if (env)
+		{
+			for (auto pe = env->Begin(); pe.IsValid(); ++pe)
+				if (auto ret = func(*pe))
+					return ret;
+		}
+		return 0;
+	}
+	// specialize to find first entry of a given type
+	template<typename T_> const T_* Find
+		(const Environment_* env)
+	{
+		auto func = [](const Entry_& e){ return dynamic_cast<const T_*>(&e); };
+		return Find<decltype(func)>(env, func);
+	}
+
+	// specific environment, with vector of entries
+	class Base_ : public Environment_
+	{
+		Vector_<Handle_<Entry_>> vals_;
+		struct MyIter_ : IterImp_
+		{
+			const Vector_<Handle_<Entry_>>& all_;
+			Vector_<Handle_<Entry_>>::const_iterator me_;
+			MyIter_(const Vector_<Handle_<Entry_>>& all, const Vector_<Handle_<Entry_>>::const_iterator& me) : all_(all), me_(me) {}	// wants constructor sugar
+			bool Valid() const override
+			{
+				return me_ != all_.end();
+			}
+			IterImp_* Next() const override
+			{
+				return new MyIter_(all_, AP::Next(me_));
+			}
+			const Entry_& operator*() const override
+			{
+				return **me_;
+			}
+		};
+	public:
+		Base_(const Vector_<Handle_<Entry_>>& vals = Vector_<Handle_<Entry_>>()) : vals_(vals) {}	// wants constructor sugar
+		MyIter_* XBegin() const override
+		{
+			return new MyIter_(vals_, vals_.begin());
+		}
+	};
+
+	// decorate an environment to add one more entry
+	// this class needs the parent environment and _ENV pointer to stay in scope
+	// use it ONLY through the macros ENV_ADD and ENV_SEED
+	class XDecorated_ : public Environment_
+	{
+		const Environment_*& theEnv_;	// of our scope 
+		const Environment_* parent_;
+		const Entry_& val_;
+
+		struct I1_ : IterImp_
+		{
+			const Environment_* parent_;
+			const Entry_& val_;
+			I1_(const Environment_* parent, const Entry_& val) : parent_(parent), val_(val) {}	// wants constructor sugar
+			bool Valid() const { return true; }
+			IterImp_* Next() const
+			{
+				return parent_ ? parent_->XBegin() : 0;
+			}
+			const Entry_& operator*() const { return val_; }
+		};
+	public:
+		XDecorated_(const Environment_*& the_env, const Entry_& val)
+			:
+			theEnv_(the_env),
+			val_(val)
+		{
+			parent_ = theEnv_;
+			theEnv_ = this;
+		}
+		~XDecorated_() { theEnv_ = parent_; }
+
+		IterImp_* XBegin() const
+		{
+			return new I1_(parent_, val_);
+		}
+	};
 }
