@@ -1,77 +1,25 @@
+// higher-level DateTime functionality
+// e.g., functions that might throw
 
-#define _CRT_SECURE_NO_DEPRECATE
-#include "DateUtils.h"
-#include <regex>
-//#include "Strict.h"
-#include "Date.h"
-#include <Exceptions.h>
-#include <Algorithms.h>
+#pragma once
+
+#include "Platform.h"
 
 
 
-namespace
+class String_;
+class DateTime_;
+
+namespace DateTime
 {
-	static const std::regex US_FORMAT("([0-9]+)/([0-9]+)/([0-9]+)");
-	static const std::regex YMD_FORMAT("([0-9]+)-([0-9]+)-([0-9]+)");
-}
+	bool IsDateTimeString(const String_& src);
+	DateTime_ FromString(const String_& src);	// date, space, colon-separated numbers
 
-bool Date::IsDateString(const String_& src)
-{
-	return std::regex_match(src, US_FORMAT)
-		|| std::regex_match(src, YMD_FORMAT);
-}
+	double DDate(const DateTime_& t, const DateTime_& from); //Y
+	Vector_<> DDate(const Vector_<DateTime_>& dates, const DateTime_& from); //Y
 
-Date_ Date::FromString(const String_& src)
-{
-	NOTE("Reading date from string");
-	NOTICE(src);
-	std::smatch match;
-	if (std::regex_match(src, match, US_FORMAT))
-	{
-		const int mm = String::ToInt(match.str(1));
-		const int dd = String::ToInt(match.str(2));
-		const int yy = String::ToInt(match.str(3)) + (match.str(3).size() == 2 ? 2000 : 0);
-		return Date_(yy, mm, dd);
-	}
-	if (std::regex_match(src, match, YMD_FORMAT))
-	{
-		const int yyyy = String::ToInt(match.str(1));
-		const int mm = String::ToInt(match.str(2));
-		const int dd = String::ToInt(match.str(3));
-		return Date_(yyyy, mm, dd);
-	}
-	THROW("Unrecognizable date source");
-}
+	DateTime_ FromDuration(const DateTime_& start, const double duration); //Y
+	Vector_<DateTime_> FromDurations(const DateTime_& start, const Vector_<>& durations); //Y
 
-int Date::MonthFromFutureCode(char code)
-{
-	static const Vector_<short> MONTHS = { 0, 0, 0, 0, 0, 1, 2, 3, 0, 4, 5, 0, 6, 7, 0, 0, 8, 0, 0, 0, 9, 10, 0, 11, 0, 12 };
-	REQUIRE(code >= 'A' && code <= 'Z', "Futures code must be an uppercase letter");
-	const int retval = MONTHS[code - 'A'];
-	REQUIRE(retval > 0, "Invalid futures code");
-	return retval;
-}
-
-
-
-double Date::DDate(const Date_& t, const Date_& from) //Y
-{
-	return (NumericValueOf(t) - NumericValueOf(from)) / 365.0;
-}
-
-namespace
-{
-	struct DDate_ : std::unary_function<Date_, double> //Y
-	{
-		const Date_ from_;
-		DDate_(const Date_& from) : from_(from) {}
-		double operator()(const Date_& t)
-		{
-			return Date::DDate(t, from_);
-		}
-	};
-}
-Vector_<> Date::DDate(const Vector_<Date_>& dates, const Date_& from) //Y
-{
-	return Apply(DDate_(from), dates);
+	DateTime_ AddMSec(const DateTime_& t, long long msec);
 }
