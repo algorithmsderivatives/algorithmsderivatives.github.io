@@ -1,60 +1,146 @@
 
-class String_;
-struct Cell_;
-class Date_;
-class DateTime_;
+#include "Globals.h"
+#include <map>
+#include <mutex>
+//#include "Strict.h"
 
-struct FixHistory_
+#include "Base/Host.h"
+#include "Base/Cell.h"
+#include "Base/Math/Matrix.h"
+#include "Base/Math/MatrixUtils.h"
+#include "Base/CellUtils.h"
+
+
+
+
+Global::Store_::~Store_()
+{	}
+
+namespace
 {
-	Vector_<pair<DateTime_, double>> vals_;
-};
-
-namespace Global
-{
-	class Store_ : noncopyable
+	// this needs to be a Meyers singleton, not a file-scope static, because we will initialize it with a file-scope static
+	std::unique_ptr<Global::Store_>& XTheDateStore()
 	{
-	public:
-		virtual ~Store_();
-		virtual void Set(const String_& name, const Matrix_<Cell_>& value) = 0;
-		virtual const Matrix_<Cell_>& Get(const String_& name) = 0;
-	};
+      RETURN_STATIC(std::unique_ptr<Global::Store_>);
+	}
 
-	Store_& TheDateStore();
-	void SetTheDateStore(Store_* orphan);	// we take over the memory
+	static std::mutex TheStoreMutex;	// locks all the stores there are
+#define LOCK_STORES std::lock_guard<std::mutex> l(TheStoreMutex)
 
-	class Dates_ : public Environment::Entry_
+	// utility functions to store a date by name
+	Date_ GetGlobalDate(const String_& which)
 	{
-	public:
-		Date_ AccountingDate() const;
-	};
+		LOCK_STORES;
+		const Matrix_<Cell_>& stored = Global::TheDateStore().Get(which);
+		if (stored.Empty() || Cell::IsEmpty(stored(0, 0)))
+		{
+			// no global date set; initialize to system date
+			int yy, mm, dd;
+			Host::LocalTime(&yy, &mm, &dd);
+			Date_ retval(yy, mm, dd);
+			Global::TheDateStore().Set(which, Matrix::M1x1(Cell_(retval)));
+			return retval;
+		}
+		return Cell::ToDate(stored(0, 0));
+	}
 
-	Store_& TheFixingsStore();
-	void SetTheFixingsStore(Store_* orphan);	// we take over the memory
-
-	class Fixings_ : public Environment::Entry_
-	{
-	public:
-		FixHistory_ History(const String_& index_canonical_name);	// do not use synonyms or user inputs, only the Name() emitted by the index
-	};
+	// names for the global dates (these will be visible in the repository, so make them comprehensible)
+	static const String_ ACCOUNTING("AccountingDate");
 }
 
-namespace XGLOBAL
+Global::Store_& Global::TheDateStore()
 {
-	template<class T_> class ScopedOverride_
+	return *XTheDateStore();
+}
+
+void Global::SetTheDateStore(Global::Store_* orphan)
+{
+	XTheDateStore().reset(orphan);
+}
+
+Date_ Global::Dates_::AccountingDate() const
+{
+	return GetGlobalDate(ACCOUNTING);
+}
+
+void XGLOBAL::SetAccountingDate(const Date_& when)
+{
+	Global::TheDateStore().Set(ACCOUNTING, Matrix::M1x1(Cell_(when)));
+}
+
+XGLOBAL::ScopedOverride_<Date_> XGLOBAL::SetAccountingDateInScope(const Date_& dt)
+{
+	ScopedOverride_<Date_> retval(SetAccountingDate, GetGlobalDate(ACCOUNTING));
+	SetAccountingDate(dt);
+	return retval;
+}
+
+//----------------------------------------------------------------------------
+
+// fixings history store looks very much like date store
+
+namespace
+{
+	// this needs to be a Meyers singleton, not a file-scope static, because we will initialize it with a file-scope static
+	std::unique_ptr<Global::Store_>& XTheFixingsStore()
 	{
-		typedef void(*Setter_)(const T_&);
-		T_ saved_;
-		Setter_ setFunc_;
-	public:
-		ScopedOverride_(Setter_ set_func, const T_& saved_val) : saved_(saved_val), setFunc_(set_func) {}
-		~ScopedOverride_() { setFunc_(saved_); }
-	};
+		RETURN_STATIC(std::unique_ptr<Global::Store_>);
+	}
 
-	void SetAccountingDate(const Date_& dt);
-	ScopedOverride_<Date_> SetAccountingDateInScope(const Date_& dt);
+	static const String_ FIX_PREFIX("FixingsFor:");
+}	// leave local
 
-	int StoreFixings	// returns # stored
-		(const String_& index_canonical_name,
-		 const FixHistory_& fixings,
-		 bool append = true);	// if false, old fixings will be removed
+FixHistory_ Global::Fixings_::History(const String_& index)
+{
+	LOCK_STORES;
+	const Matrix_<Cell_>& stored = Global::TheFixingsStore().Get(FIX_PREFIX + index);
+	FixHistory_ retval;
+	if (stored.Empty())
+		return retval;
+	assert(stored.Cols() == 2);
+	assert(AllOf(stored.Col(0), Cell::TypeCheck_().DateTime()));
+	assert(AllOf(stored.Col(0), Cell::TypeCheck_().Number()));
+	const int n = stored.Rows();
+	retval.vals_.Resize(n);
+	for (int ii = 0; ii < n; ++ii)
+		retval.vals_[ii] = make_pair(Cell::ToDateTime(stored(ii, 0)), Cell::ToDouble(stored(ii, 1)));
+	return retval;
+}
+
+int XGLOBAL::StoreFixings
+	(const String_& index,
+	 const FixHistory_& fixings,
+	 bool append)
+{
+	std::map<DateTime_, double> all;
+	if (append)
+	{
+		const FixHistory_& old = Global::Fixings_().History(index);
+		for (const auto& d_f : old.vals_)
+			all[d_f.first] = d_f.second;
+	}
+	// now add new fixings, overwriting the old
+	for (const auto& d_f : fixings.vals_)
+		all[d_f.first] = d_f.second;
+	// write results directly into the table for storage
+	Matrix_<Cell_> storeMe(static_cast<int>(all.size()), 2);
+	int ii = 0;
+	for (const auto& d_f : all)
+	{
+		storeMe(ii, 0) = d_f.first;
+		storeMe(ii, 1) = d_f.second;
+		++ii;
+	}	// thus stored fixings will always be in chronological order
+	Global::TheFixingsStore().Set(FIX_PREFIX + index, storeMe);
+	return storeMe.Rows();
+}
+
+Global::Store_& Global::TheFixingsStore()
+{
+	return *XTheFixingsStore();
+}
+
+void Global::SetTheFixingsStore(Global::Store_* orphan)
+{
+	XTheFixingsStore().reset(orphan);
 }
