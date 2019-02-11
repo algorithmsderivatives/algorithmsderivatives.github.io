@@ -1,145 +1,355 @@
+#pragma warning(disable : 4345)
 
+#include "AP.h"
+#include "MatrixUtils.h"
+#include "Cell.h"
 #include "Matrix.h"
-//#include <Base/String.h>
-//#include <Base/Cell.h>
-//#include <Base/Exception.h>
+#include "Exceptions.h"
 
 
-
-struct Cell_;
-
-namespace Matrix
+namespace
 {
-	Matrix_<Cell_> Format
-		(const Vector_<const Matrix_<Cell_>*>& args,
-		const String_& format);
+	typedef Matrix_<Cell_> Table_;
 
-	template<class T_> Matrix_<T_> MakeTranspose(const Matrix_<T_>& src)
+	struct WriterView_
 	{
-		Matrix_<T_> retval(src.Cols(), src.Rows());
-		for (int ir = 0; ir < src.Rows(); ++ir)
-			Copy(src.Row(ir), &retval.Col(ir));
-		return retval;
-	}
+		mutable Table_* dst_;
+		int rowOffset_;
+		int colOffset_;
+		// linear mapping from input coordinate to coordinate in dst_
+		int r2r_, r2c_, c2r_, c2c_;
 
-	template<class E_> void Append(Matrix_<E_>* above, const Matrix_<E_>& below)
-	{
-		assert(above != nullptr);
-		const int offset = above->Rows();
-		above->Resize(offset + below.Rows(), Max(above->Cols(), below.Cols()));    // efficient unless below is too wide
-		for (int ir = 0; ir < below.Rows(); ++ir)
-			Copy(below.Row(ir), &above->Row(ir + offset));
-	}
+		WriterView_(Table_* dst) : dst_(dst), rowOffset_(0), colOffset_(0), r2r_(1), r2c_(0), c2r_(0), c2c_(1) {}
 
-	// make a 1x1 matrix
-	template<class E_> Matrix_<E_> M1x1(const E_& src)
-	{
-		Matrix_<E_> retval(1, 1);
-		retval(0, 0) = src;
-		return retval;
-	}
-
-	// copy/transform all matrix elements; these functions all take advantage of the known layout of matrix!
-	template<class E_> typename Matrix_<E_>::Row_::iterator EndElements(Matrix_<E_>& m)
-	{
-		return m.Row(m.Empty() ? 0 : m.Rows() - 1).end();
-	}
-	template<class E_> typename Matrix_<E_>::ConstRow_::const_iterator EndElements(const Matrix_<E_>& m)
-	{
-		return m.Row(m.Empty() ? 0 : m.Rows() - 1).end();
-	}
-
-	template<class E_, class Op_> void Transform(Matrix_<E_>* container, Op_ op)
-	{
-		Matrix_<E_>::Row_::iterator b = container->Row(0).begin();
-		transform(b, EndElements(*container), b, op);
-	}
-	template<class E_, class EE_, class Op_> void Transform(Matrix_<E_>* to_modify, const Matrix_<EE_>& other, Op_ op)
-	{
-		assert(other.Rows() == to_modify->Rows() && other.Cols() == to_modify->Cols());
-		Matrix_<E_>::Row_::iterator b = container->Row(0).begin();
-		transform(b, EndElements(*to_modify), other.Row(0).begin(), b, op);
-	}
-	template<class EI_, class EO_, class Op_> void Transform(const Matrix_<EI_>& in, Op_ op, Matrix_<EO_>* out)
-	{
-		assert(in.Rows() == out->Rows() && in.Cols() == out->Cols());
-		transform(in.Row(0).begin(), EndElements(in), out->Row(0).begin(), op);
-	}
-	template<class E1_, class E2_, class EO_, class Op_> void Transform(const Matrix_<E1_>& in1, const Matrix_<E2_>& in2, Op_ op, Matrix_<EO_>* out)
-	{
-		assert(in1.Rows() == out->Rows() && in1.Cols() == out->Cols());
-		assert(in2.Rows() == out->Rows() && in2.Cols() == out->Cols());
-		transform(in1.Row(0).begin(), EndElements(in1), in2.Row(0).begin(), out->Row(0).begin(), op);
-	}
-
-	template<class ES_, class ED_> void Copy(const Matrix_<ES_>& src, Matrix_<ED_>* dst)
-	{
-		assert(dst && src.Rows() == dst->Rows() && src.Cols() == dst->Cols());
-		copy(src.Row(0).begin(), EndElements(src), dst->Row(0).begin());
-	}
-	template<class E_, class Op_> auto Apply(Op_ op, const Matrix_<E_>& src)->Matrix_<decltype(op(src(0, 0)))>
-	{
-		Matrix_<decltype(op(src(0, 0)))> retval(src.Rows(), src.Cols());
-		Transform(src, op, &retval);
-		return retval;
-	}
-
-	template<class E_> Matrix_<E_> FromVectors(const Vector_<Vector_<E_> >& vv, bool by_cols = false, bool quiet = true, bool ragged = false)
-	{
-		if (vv.empty())
-			return Matrix_<E_>();
-
-		const int size2 = ragged ? *MaxElement(Apply([](const Vector_<E_>& v){ return v.size(); }, vv)) : vv[0].size();
-		Matrix_<E_> retval(by_cols ? size2 : vv.size(), by_cols ? vv.size() : size2);
-		for (int ii = 0; ii < vv.size(); ++ii)
+		void Write(int i_row, int i_col, const Cell_& val) const
 		{
-			REQUIRE(quiet || ragged || vv[ii].size() == size2, "Invalid array sizing");
-			if (by_cols)
-				copy(vv[ii].begin(), vv[ii].end(), retval.Col(ii).begin());
-			else
-				copy(vv[ii].begin(), vv[ii].end(), retval.Row(ii).begin());
+			const int dstRow = rowOffset_ + r2r_ * i_row + c2r_ * i_col;
+			const int dstCol = colOffset_ + r2c_ * i_row + c2c_ * i_col;
+			(*dst_)(dstRow, dstCol) = val;
 		}
-		return retval;
-	}
-	template<class E_> Vector_<Vector_<E_> > ToVectors(const Matrix_<E_>& m, bool by_cols = false)
-	{
-		Vector_<Vector_<E_> > retval(by_cols ? m.Cols() : m.Rows());
-		for (int ii = 0; ii < retval.size(); ++ii)
-		{
-			retval[ii] = by_cols
-				? Copy(m.Col(ii))
-				: Copy(m.Row(ii));
-		}
-		return retval;
-	}
 
-	//Y
-	template<class E_>
-	inline Matrix_<E_> FromVectorByRows(size_t rows, size_t columns, const Vector_<E_>& v)
-	{
-		Matrix_<E_> ret(rows, columns);
-		size_t k = 0;
-		for (size_t i = 0; i<rows; ++i)
+		WriterView_ Transpose() const
 		{
-			for (size_t j = 0; j<columns; ++j)
+			WriterView_ retval(*this);
+			std::swap(retval.r2r_, retval.c2r_);
+			std::swap(retval.r2c_, retval.c2c_);
+			return retval;
+		}
+		WriterView_ Invert(int n_rows, int n_cols) const
+		{
+			WriterView_ retval(*this);
+			retval.rowOffset_ += r2r_ * (n_rows - 1) + c2r_ * (n_cols - 1);
+			retval.colOffset_ += r2c_ * (n_rows - 1) + c2c_ * (n_cols - 1);
+			retval.r2r_ *= -1;
+			retval.r2c_ *= -1;
+			retval.c2r_ *= -1;
+			retval.c2c_ *= -1;
+			return retval;
+		}
+		WriterView_ Shift(int row_offset, int col_offset) const
+		{
+			WriterView_ retval(*this);
+			retval.rowOffset_ += r2r_ * row_offset + c2r_ * col_offset;
+			retval.colOffset_ += r2c_ * row_offset + c2c_ * col_offset;
+			return retval;
+		}
+		WriterView_ Flatten(int n_cols) const
+		{
+			WriterView_ retval(*this);
+			retval.r2r_ = n_cols * retval.c2r_;
+			retval.r2c_ = n_cols * retval.c2c_;
+			return retval;
+		}
+	};
+
+
+	struct Writer_ : noncopyable
+	{
+		virtual ~Writer_() {}
+		virtual int Rows(const Vector_<const Table_*>& args) const = 0;
+		virtual int Cols(const Vector_<const Table_*>& args) const = 0;
+		virtual void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>& args)
+			const = 0;
+	};
+
+	struct TransposedWriter_ : Writer_
+	{
+		scoped_ptr<Writer_> base_;
+		TransposedWriter_(Writer_* base) : base_(base) {}
+		int Rows(const Vector_<const Table_*>& args) const { return base_->Cols(args); }
+		int Cols(const Vector_<const Table_*>& args) const { return base_->Rows(args); }
+		void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>& args)
+			const
+		{
+			base_->Write(dst.Transpose(), args);
+		}
+	};
+
+	struct InvertedWriter_ : Writer_
+	{
+		scoped_ptr<Writer_> base_;
+		InvertedWriter_(Writer_* base) : base_(base) {}
+		int Rows(const Vector_<const Table_*>& args) const { return base_->Rows(args); }
+		int Cols(const Vector_<const Table_*>& args) const { return base_->Cols(args); }
+		void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>& args)
+			const
+		{
+			base_->Write(dst.Invert(Rows(args), Cols(args)), args);
+		}
+	};
+
+	struct LinearWriter_ : Writer_	// puts everything in a single row
+	{
+		scoped_ptr<Writer_> base_;
+		LinearWriter_(Writer_* base) : base_(base) {}
+		int Rows(const Vector_<const Table_*>&) const { return 1; }
+		int Cols(const Vector_<const Table_*>& args) const { return base_->Rows(args) * base_->Cols(args); }
+		void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>& args)
+			const
+		{
+			base_->Write(dst.Flatten(base_->Cols(args)), args);
+		}
+	};
+
+	struct HorizontalWriter_ : Writer_	// writes args left-to-right, justifies to top; transpose to make a vertical writer
+	{
+		bool justifyBottom_;
+		Vector_<Handle_<Writer_> > elements_;
+		HorizontalWriter_(bool justify_bottom = false) : justifyBottom_(justify_bottom) {}
+
+		int Rows(const Vector_<const Table_*>& args) const
+		{
+			int retval = 0;
+			for (const auto& e : elements_)
+				retval = Max(retval, e->Rows(args));
+			return retval;
+		}
+		int Cols(const Vector_<const Table_*>& args) const
+		{
+			int retval = 0;
+			for (const auto& e : elements_)
+				retval += e->Cols(args);
+			return retval;
+		}
+		void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>& args)
+			const
+		{
+			WriterView_ temp(dst);
+			const int height = justifyBottom_ ? Rows(args) : 0;
+			for (const auto& e : elements_)
 			{
-				ret(i, j) = v[k++];
-				if (k >= v.size()) k = 0; // allow to duplicate vector by rows
+				const int vShift = justifyBottom_ ? height - e->Rows(args) : 0;
+				temp = temp.Shift(vShift, 0);
+				e->Write(temp, args);
+				temp = temp.Shift(-vShift, e->Cols(args));
 			}
 		}
-		return ret;
-	}
+	};
 
-	//Y
-	template<class E_>
-	inline Matrix_<E_> Constant(size_t rows, size_t columns, const E_& val = E_())
+	struct VerticalWriter_ : Writer_	// writes args left-to-right, justifies to top; transpose to make a horizontal writer
 	{
-		Matrix_<E_> m(rows, columns);
-		m.Fill(val);
-		return m;
+		bool justifyRight_;
+		Vector_<Handle_<Writer_> > elements_;
+		VerticalWriter_(bool justify_right) : justifyRight_(justify_right) {}
+
+		int Cols(const Vector_<const Table_*>& args) const
+		{
+			int retval = 0;
+			for (const auto& e : elements_)
+				retval = Max(retval, e->Cols(args));
+			return retval;
+		}
+		int Rows(const Vector_<const Table_*>& args) const
+		{
+			int retval = 0;
+			for (const auto& e : elements_)
+				retval += e->Rows(args);
+			return retval;
+		}
+		void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>& args)
+			const
+		{
+			WriterView_ temp(dst);
+			const int width = justifyRight_ ? Cols(args) : 0;
+			for (const auto& e : elements_)
+			{
+				const int hShift = justifyRight_ ? width - e->Cols(args) : 0;
+				temp = temp.Shift(0, hShift);
+				e->Write(temp, args);
+				temp = temp.Shift(e->Rows(args), -hShift);
+			}
+		}
+	};
+
+	struct EmptyCell_ : Writer_
+	{
+		int Rows(const Vector_<const Table_*>&) const { return 1; }
+		int Cols(const Vector_<const Table_*>&) const { return 1; }
+		void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>&)
+			const
+		{
+			dst.Write(0, 0, Cell_());
+		}
+	};
+
+	struct ArgWriter_ : Writer_
+	{
+		int whichArg_;
+		ArgWriter_(int which) : whichArg_(which) {}
+		int Rows(const Vector_<const Table_*>& args) const
+		{
+			return whichArg_ < args.size()
+				? args[whichArg_]->Rows()
+				: 0;
+		}
+		int Cols(const Vector_<const Table_*>& args) const
+		{
+			return whichArg_ < args.size()
+				? args[whichArg_]->Cols()
+				: 0;
+		}
+		void Write
+			(const WriterView_& dst,
+			const Vector_<const Table_*>& args)
+			const
+		{
+			if (whichArg_ >= args.size())
+				return;
+			const Table_& src = *args[whichArg_];
+			for (int ir = 0; ir < src.Rows(); ++ir)
+				for (int ic = 0; ic < src.Cols(); ++ic)
+					dst.Write(ir, ic, src(ir, ic));
+		}
+	};
+
+
+	Vector_<String_> Split
+		(const String_& src,
+		char sep)
+	{
+		Vector_<String_> retval(1, String_());
+		int depth = 0;
+		for (const auto& s : src)
+		{
+			if (s == sep && depth == 0)
+				retval.push_back(String_());
+			else
+			{
+				retval.back().push_back(s);
+				if (s == '(')
+					++depth;
+				if (s == ')')
+					--depth;
+			}
+		}
+		return retval;
 	}
 
-	bool IsClose(const Matrix_<>& m1, const Matrix_<>& m2, double eps = EPSILON); //Y
+	String_ Strip(const String_& src)	// remove parentheses around the whole thing
+	{
+		auto ps = src.begin();
+		for (int depth = 0; ps != src.end(); ++ps)
+		{
+			if (*ps == '(')
+				++depth;
+			else if (*ps == ')')
+				--depth;
+			if (depth == 0)
+				break;
+		}
+		return (ps == src.end() - 1 && *ps == ')')	// parentheses wrap the whole thing
+			? Strip(src.substr(1, src.size() - 2))
+			: src;
+	}
 
+	Writer_* NewWriter(const String_& format);
+	template<class M_> Writer_* MultipleWriter
+		(const String_& format,
+		char separator,
+		M_ make_multiple)
+	{
+		typedef typename std::remove_reference<decltype(*make_multiple())>::type multiple_t;
+		Vector_<String_> subs = Split(format, separator);
+		if (subs.size() <= 1)
+			return nullptr;
+		std::unique_ptr<multiple_t> retval(make_multiple());
+		for (const auto& s : subs)
+			retval->elements_.emplace_back(NewWriter(s));
+		return retval.release();
+	}
+
+	Writer_* XNewWriter(const String_& format)
+	{
+		// POSTPONED -- should ':' and ';' have the same precedence?
+		if (auto vr = MultipleWriter(format, ':', [](){return new VerticalWriter_(true); }))
+			return vr;
+		if (auto vl = MultipleWriter(format, ';', [](){return new VerticalWriter_(false); }))
+			return vl;
+		// ok, no unparenthesized semicolons
+		if (auto hr = MultipleWriter(format, '.', [](){return new HorizontalWriter_(true); }))
+			return hr;
+		if (auto hl = MultipleWriter(format, ',', [](){return new HorizontalWriter_(false); }))
+			return hl;
+
+		// no commas:  just one element
+		if (toupper(format.back()) == 'T')
+			return new TransposedWriter_(NewWriter(format.substr(0, format.size() - 1)));
+		else if (toupper(format.back()) == 'I')
+			return new InvertedWriter_(NewWriter(format.substr(0, format.size() - 1)));
+		else if (format.back() == '*')
+			return new LinearWriter_(NewWriter(format.substr(0, format.size() - 1)));
+		else
+		{
+			REQUIRE(format.size() == 1 && format.front() >= '0' && format.front() <= '9', "Can't recognize format element -- expected argument index (format = '" + format + "')");
+			return format.front() == '0'
+				? (Writer_*) new EmptyCell_
+				: new ArgWriter_(format.front() - '1');	// implements 1-offset count of args
+		}
+	}
+	Writer_* NewWriter(const String_& format)
+	{
+		return XNewWriter(Strip(format));
+	}
+}	// leave local
+
+Matrix_<Cell_> Matrix::Format
+(const Vector_<const Table_*>& args,
+const String_& format)
+{
+	scoped_ptr<Writer_> writer(NewWriter(format));
+	Matrix_<Cell_> retval(writer->Rows(args), writer->Cols(args));
+	REQUIRE(retval.Rows() * retval.Cols() > 0, "Nothing to output");
+	writer->Write(WriterView_(&retval), args);
+	return retval;
 }
 
+
+//Y
+bool Matrix::IsClose(const Matrix_<>& m1, const Matrix_<>& m2, double eps)
+{
+	REQUIRE(m1.Rows() == m2.Rows(), "number of rows doesn't match");
+	REQUIRE(m1.Cols() == m2.Cols(), "number of rows doesn't match");
+	bool retval = true;
+	for (int i = 0; retval && i<m1.Rows(); ++i)
+	{
+		for (int j = 0; retval && j<m2.Cols(); ++j)
+		{
+			retval = retval && AP::IsClose(m1(i, j), m2(i, j), eps);
+		}
+	}
+	return retval;
+}
