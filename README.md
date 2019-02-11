@@ -1,66 +1,87 @@
 
-#include AP.h
-#include map
-#include Cell.h
-#include Storable.h
+#include "Dictionary.h"
+
+#include "Exception.h"
+#include "DateUtils.h"
+#include "CellUtils.h"
+#include "DateTimeUtils.h"
 
 
-  
-// basically a map<String_, Cell_>, with uppercase strings and protection against duplicates
 
-class Dictionary_
+void Dictionary_::Insert(const String_& key, const Cell_& val)
 {
-	std::map<String_, Cell_> val_;
-public:
-	Dictionary_() {}
-
-	void Insert(const String_& key, const Cell_& val);
-	bool Has(const String_& key) const;
-	const Cell_& At(const String_& key, bool optional = false) const;
-	int Size() const { return static_cast<int>(val_.size()); }
-	std::map<String_, Cell_>::const_iterator begin() const { return val_.begin(); }
-	std::map<String_, Cell_>::const_iterator end() const { return val_.end(); }
-};
-
-namespace Dictionary
-{
-	const Cell_& BlankCell();	// returned when At can't find key
-
-	template<class F_, class R_> auto Extract
-		(const Dictionary_& src,
-		const String_& key,
-		F_ translate,
-		const R_& default_val)
-		-> decltype(translate(Cell_()))
-	{
-		return src.Has(key)
-			? translate(src.At(key))
-			: default_val;
-	}
-
-	template<class F_> auto Extract
-		(const Dictionary_& src,
-		const String_& key,
-		F_ translate)
-		->decltype(translate(Cell_()))
-	{
-		return translate(src.At(key, false));
-	}
-
-	// deal with non-atomic types too
-	Handle_<Storable_> FindHandleBase(const std::map<String_, Handle_<Storable_>>& handles, const String_& key, bool quiet = false);
-	template<class T_> Handle_<T_> FindHandle(const std::map<String_, Handle_<Storable_>>& handles, const String_& key)
-	{
-		auto retval = handle_cast<T_>(FindHandleBase(handles, key));
-		REQUIRE(retval, "Object with key '" + key + "' has invalid type");
-		return retval;
-	}
-
-	// convert dict to/from string (';' separator, '=' between key and value)
-	String_ ToString(const Dictionary_& dict);
-	Dictionary_ FromString(const String_& src);
+	const String_& k = String::Condensed(key);
+	REQUIRE(!val_.count(k), "Duplicate key '" + k + "'");
+	val_.insert(make_pair(k, val));
 }
 
-// sometimes we need to provide information about how to save a settings
-template<class T_> class StoreAsDictionary_
-{	};	// no content
+const Cell_& Dictionary::BlankCell()
+{
+	RETURN_STATIC(Cell_);
+}
+
+const Cell_& Dictionary_::At(const String_& key, bool optional) const
+{
+	const String_& k = String::Condensed(key);
+	auto p = val_.find(k);
+	if (p != val_.end())
+		return p->second;
+	REQUIRE(optional, "No value for key '" + k + "'");
+	return Dictionary::BlankCell();
+}
+
+bool Dictionary_::Has(const String_& key) const
+{
+	return val_.count(String::Condensed(key)) > 0;
+}
+
+Handle_<Storable_> Dictionary::FindHandleBase
+	(const std::map<String_, Handle_<Storable_>>& handles, 
+	 const String_& key,
+	 bool quiet)
+{
+	auto p = handles.find(String::Condensed(key));
+	if (p == handles.end())
+	{
+		REQUIRE(quiet, "No handle found at '" + key + "'");
+		return Handle_<Storable_>();
+	}
+	return p->second;
+}
+
+String_ Dictionary::ToString(const Dictionary_& d)
+{
+	String_ retval;
+	for (const auto& kv : d)
+	{
+		if (!retval.empty())
+			retval += ';';
+		retval += kv.first;
+		retval += '=';
+		retval += Cell::CoerceToString(kv.second);
+	}
+	return retval;
+}
+Dictionary_ Dictionary::FromString(const String_& s)
+{
+	Vector_<String_> entries = String::Split(s, ';', false);
+	Dictionary_ retval;
+	for (const auto& kev : entries)
+	{
+		Vector_<String_> kv = String::Split(kev, '=', true);
+		REQUIRE(kv.size() == 2, "Dictionary entry must have the form 'key=value'");
+		REQUIRE(!kv.front().empty(), "Empty dictionary key");
+		const String_& vs = kv.back();
+		Cell_ value;
+		if (String::IsNumber(vs))
+			value = String::ToDouble(vs);
+		else if (Date::IsDateString(vs))
+			value = Date::FromString(vs);
+		else if (DateTime::IsDateTimeString(vs))
+			value = DateTime::FromString(vs);
+		else if (!vs.empty())
+			value = vs;
+		retval.Insert(kv.front(), value);
+	}
+	return retval;
+}
