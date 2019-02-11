@@ -1,33 +1,66 @@
 
-#include "ValuationParameters.h"
-#include Exception.h
-#include StringUtils.h
+#include AP.h
+#include map
+#include Cell.h
+#include Storable.h
 
 
+  
+// basically a map<String_, Cell_>, with uppercase strings and protection against duplicates
 
-namespace Valuation
+class Dictionary_
 {
-	Parameters_::Parameters_(const Dictionary_& src)
-		: mc_(src), pde_(src), analyticResult_("NPV")
+	std::map<String_, Cell_> val_;
+public:
+	Dictionary_() {}
+
+	void Insert(const String_& key, const Cell_& val);
+	bool Has(const String_& key) const;
+	const Cell_& At(const String_& key, bool optional = false) const;
+	int Size() const { return static_cast<int>(val_.size()); }
+	std::map<String_, Cell_>::const_iterator begin() const { return val_.begin(); }
+	std::map<String_, Cell_>::const_iterator end() const { return val_.end(); }
+};
+
+namespace Dictionary
+{
+	const Cell_& BlankCell();	// returned when At can't find key
+
+	template<class F_, class R_> auto Extract
+		(const Dictionary_& src,
+		const String_& key,
+		F_ translate,
+		const R_& default_val)
+		-> decltype(translate(Cell_()))
 	{
-		REQUIRE(src.Has(Names::METHOD), "valuation method missing");
-		method_ = ValuationMethod_(Cell::OwnString(src.At(Names::METHOD)));
-		REQUIRE(src.Has(Names::CURRENCY), "valuation currency missing");
-		valueCcy_ = Ccy_(Cell::OwnString(src.At(Names::CURRENCY)));
+		return src.Has(key)
+			? translate(src.At(key))
+			: default_val;
 	}
 
-	MonteCarlo::Parameters_::Parameters_(const Dictionary_& src)
+	template<class F_> auto Extract
+		(const Dictionary_& src,
+		const String_& key,
+		F_ translate)
+		->decltype(translate(Cell_()))
 	{
-		nPaths_ = String::ToInt(Cell::OwnString(src.At(Names::MC_NPATHS)));
-		statistics_name_ = Cell::OwnString(src.At(Names::MC_STATISTICS_NAME));
+		return translate(src.At(key, false));
 	}
 
-	PDE::Parameters_::Parameters_(const Dictionary_& src)
-		: fullGrid_(false)
+	// deal with non-atomic types too
+	Handle_<Storable_> FindHandleBase(const std::map<String_, Handle_<Storable_>>& handles, const String_& key, bool quiet = false);
+	template<class T_> Handle_<T_> FindHandle(const std::map<String_, Handle_<Storable_>>& handles, const String_& key)
 	{
-		nTimeSteps_ = String::ToInt(Cell::OwnString(src.At(Names::PDE_NTIMESTEPS)));
-		nSpaceSteps_ = String::ToInt(Cell::OwnString(src.At(Names::PDE_NSPACESTEPS)));
-		nSigmas_ = String::ToInt(Cell::OwnString(src.At(Names::PDE_NSIGMAS)));
-		theta_ = String::ToDouble(Cell::OwnString(src.At(Names::PDE_THETA)));
+		auto retval = handle_cast<T_>(FindHandleBase(handles, key));
+		REQUIRE(retval, "Object with key '" + key + "' has invalid type");
+		return retval;
 	}
+
+	// convert dict to/from string (';' separator, '=' between key and value)
+	String_ ToString(const Dictionary_& dict);
+	Dictionary_ FromString(const String_& src);
 }
+
+// sometimes we need to provide information about how to save a settings
+template<class T_> class StoreAsDictionary_
+{	};	// no content
