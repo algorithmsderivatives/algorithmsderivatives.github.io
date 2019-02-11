@@ -1,24 +1,30 @@
 
-#include "Base\Dictionary.h"
-class UIRow_;
-class Storable_;
-
-struct  ValuationParameters_ : StoreAsDictionary_<ValuationParameters_>
-{	
-	ValuationMethod_ method_;
-	int nPaths_;
-	Ccy_ valueCcy_;
-	int nXSizePDE_;
-	int nTSizePDE_;
-	double nSigmasPDE_;
-	double thetaPDE_;
-	BoundaryTypePDE_ boundLowTypePDE_;
-	double boundLowXPDE_;
-	double boundLowValPDE_;
-	BoundaryTypePDE_ boundHighTypePDE_;
-	double boundHighXPDE_;
-	double boundHighValPDE_;
-	ValuationParameters_(const Dictionary_& src);
-	ValuationParameters_(const Dictionary_& src, const std::map<String_, Handle_<Storable_>>&) : ValuationParameters_(src) {}
-	Dictionary_ Data() const;
+class  ValuationMethod_
+{
+public:
+   enum class Value_ : char
+   {
+      		CLOSED_FORM,
+		MONTE_CARLO,
+		PDE,
+      _N_VALUES
+   } val_;
+      
+    ValuationMethod_(Value_ val) : val_(val) {assert(val < Value_::_N_VALUES);}
+private:
+    friend  bool operator==(const ValuationMethod_& lhs, const ValuationMethod_& rhs);
+	friend struct ReadStringValuationMethod_;
+    friend Vector_<ValuationMethod_> ValuationMethodListAll();
+	friend bool operator<(const ValuationMethod_& lhs, const ValuationMethod_& rhs){return lhs.val_ < rhs.val_;}
+public:
+    explicit ValuationMethod_(const String_& src);
+    const char* String() const;
+   Value_ Switch() const {return val_;}
+	ValuationMethod_() : val_(Value_::CLOSED_FORM) {};
 };
+Vector_<ValuationMethod_> ValuationMethodListAll();
+
+ bool operator==(const ValuationMethod_& lhs, const ValuationMethod_& rhs); 
+inline bool operator!=(const ValuationMethod_& lhs, const ValuationMethod_& rhs) {return !(lhs == rhs);}
+inline bool operator==(const ValuationMethod_& lhs, ValuationMethod_::Value_ rhs) {return lhs.Switch() == rhs;}
+inline bool operator!=(const ValuationMethod_& lhs, ValuationMethod_::Value_ rhs) {return lhs.Switch() != rhs;}
