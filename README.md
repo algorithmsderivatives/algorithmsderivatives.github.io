@@ -5,13 +5,17 @@
 
 Changement de mesure
 
-D'après le théorème de Girsanov (pour $1\leq l\leq d$) :
+\begin{prop}
+Nous avons :
 \begin{equation*}
-W_{l,t}^{k}=W_{l,t}^{k+1}-\left\langle \int_{0}^{\cdot }\alpha _{u}^{k}\cdot
-W_{u}^{k+1},W_{l,u}^{k+1}\right\rangle _{t}=W_{l,t}^{k+1}-\int_{0}^{t}\alpha
-_{l,u}^{k}du
+\fbox{$\displaystyle dW_{t}^{k}=dW_{t}^{k+1}-\frac{\delta _{k}L_{t}^{k}}{%
+1+\delta _{k}L_{t}^{k}}\,\sigma _{t}^{k}dt$}
 \end{equation*}
-$W_{l}^{k}$ est un mouvement brownien sous $Q^{k}$, i.e.
+Notons que : 
 \begin{equation*}
-W_{t}^{k}=W_{t}^{k+1}-\int_{0}^{t}\alpha _{u}^{k}du
+dW_{t}^{i+1}=dW^{N}\left( t\right) +\sum_{k=i+1}^{N-1}\left( dW^{k}\left(
+t\right) -dW^{k+1}\left( t\right) \right) =dw^{N}\left( t\right)
++\sum_{k=i+1}^{N-1}\frac{\delta _{k}L_{k}\left( t\right) }{1+\delta
+_{k}L_{k}\left( t\right) }\,\sigma _{k}\left( t\right) dt
 \end{equation*}
+\end{prop}
