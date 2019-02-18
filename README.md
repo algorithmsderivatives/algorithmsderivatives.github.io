@@ -1,4 +1,4 @@
-a b c d
+﻿a b c d
 
 2 TEST
 5
@@ -11,13 +11,13 @@ Posons :
 _{t}=\left. \frac{B\left( t,T_{k}\right) }{B\left( 0,T_{k}\right) }\right/ 
 \frac{B\left( t,T_{k+1}\right) }{B\left( 0,T_{k+1}\right) }=\frac{1+\delta
 _{k}L_{t}^{k}}{1+\delta _{k}L_{0}^{k}}
-\end{equation*}%
-D'après Itô : 
+\end{equation*}
+D'apres Ito : 
 \begin{equation*}
 \frac{d\xi _{t}^{k}}{\xi _{t}^{k}}=\frac{d\left( 1+\delta
 _{k}L_{t}^{k}\right) }{1+\delta _{k}L_{t}^{k}}=\frac{\delta _{k}L_{t}^{k}}{%
 1+\delta _{k}L_{t}^{k}}\,\sigma _{t}^{k}\cdot dW_{t}^{k+1}
-\end{equation*}%
+\end{equation*}
 Notons que $\rho _{t}^{k}$ est une martingale exponentielle sous $Q^{k+1}$ : 
 \begin{equation*}
 \frac{d\xi _{t}^{k}}{\xi _{t}^{k}}=\alpha _{t}^{k}\cdot dW_{t}^{k+1}
@@ -26,7 +26,7 @@ avec%
 \begin{equation*}
 \alpha _{t}^{k}=\frac{\delta _{k}L_{t}^{k}}{1+\delta _{k}L_{t}^{k}}\,\sigma
 _{t}^{k}
-\end{equation*}%
+\end{equation*}
 D'après le théorème de Girsanov (pour $1\leq l\leq d$) :%
 \begin{equation*}
 W_{l,t}^{k}=W_{l,t}^{k+1}-\left\langle \int_{0}^{\cdot }\alpha _{u}^{k}\cdot
