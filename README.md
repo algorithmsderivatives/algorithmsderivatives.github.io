@@ -1,11 +1,8 @@
-1
-2 TEST
-3
-4
 
+2 TEST
+5
 
 Changement de mesure
-
 
 Posons : 
 \begin{equation*}
