@@ -6,8 +6,7 @@ Changement de mesure
 
 Nous avons :
 \begin{equation*}
-\fbox{$\displaystyle dW_{t}^{k} = dW_{t}^{k+1}-\frac{\delta _{k}L_{t}^{k}}{%
-1+\delta _{k}L_{t}^{k}}\,\sigma_{t}^{k}dt$}
+dW_{t}^{k} = dW_{t}^{k+1} - \frac{\delta_k L_{t}^k}{ 1 +\delta_k L_t^k} \, \sigma_t^k dt
 \end{equation*}
 
 
