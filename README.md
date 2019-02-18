@@ -4,19 +4,12 @@
 Changement de mesure
 
 
-Et 
+En particulier, le libor $L_{t}^{i}$ s'écrit sous $Q^{T_{i}}$ : 
 \begin{equation*}
-dW_{l}^{k}\left( t\right) =dW_{l}^{k+1}\left( t\right) -d\left\langle \frac{
-\delta _{k}L_{k}\left( t\right) }{1+\delta _{k}L_{k}\left( t\right) }
-\,\sigma _{k}(t)\cdot w^{k+1},w_{l}^{k+1}\right\rangle
-_{t}=dw_{l}^{k+1}\left( t\right) -\frac{\delta _{k}L_{k}\left( t\right) }{
-1+\delta _{k}L_{k}\left( t\right) }\,\sigma _{k,l}\left( t\right) dt
+\frac{dL_{t}^{i}}{L_{t}^{i}}=\sigma _{t}^{i}\cdot dW_{t}^{i}+\frac{\delta
+_{i}L_{t}^{i}}{1+\delta _{i}L_{t}^{i}}\,\sigma _{t}^{i}\cdot \sigma
+_{t}^{i}dt
 \end{equation*}
-En supposant que : $d\left\langle W_{j}^{k+1},W_{l}^{k+1}\right\rangle
-=\delta _{jl}dt$ i.e. 
-\begin{equation*}
-dw^{k}\left( t\right) =dw^{k+1}\left( t\right) -\frac{\delta _{k}L_{k}(t)}{
-1+\delta _{k}L_{k}(t)}\,\sigma _{k}\left( t\right) dt
-\end{equation*}
+
 
 
