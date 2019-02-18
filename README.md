@@ -4,9 +4,11 @@
 Changement de mesure
 
 
-Nous avons :
+Notons que : 
 \begin{equation*}
-dW_{t}^{k} = dW_{t}^{k+1} - \frac{\delta_k L_{t}^k}{ 1 +\delta_k L_t^k} \, \sigma_t^k dt
+dW_{t}^{i+1} 
+= dW^{N}\left( t\right) +\sum_{k=i+1}^{N-1} \left( dW^k(t) - dW^{k+1} (t) \right) 
+= dw^{N}\left( t\right) +\sum_{k=i+1}^{N-1} \frac{\delta_k L_k (t) }{1 + \delta_k L_k ( t) } \,\sigma_k ( t ) dt
 \end{equation*}
 
 
