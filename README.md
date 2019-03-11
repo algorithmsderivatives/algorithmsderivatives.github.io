@@ -1,25 +1,103 @@
-	void PrintResult(const String_& title, double result, double target)
+namespace
+{
+	class SimpleBlackModel_ : public Model_, public HasAnalyticEquity_, public HasAnalyticEquityBarrier_
 	{
-		cout << title << (AP::IsClose(result, target, AP::BIG_EPSILON) ? "ok" : "not ok") << endl;
-	}
+		Handle_<YieldCurve_> yc_;
+		const double spot_;
+		Handle_<Dividends_> div_;
+		Handle_<BSImp::Vol_> vol_;
+	public:
+		SimpleBlackModel_(
+			const String_& modelName,
+			const Handle_<YieldCurve_>& yc,
+			double spot,
+			const Handle_<Dividends_> & div,
+			const Handle_<BSImp::Vol_>& vol)
+			: Model_(modelName), yc_(yc), spot_(spot), div_(div), vol_(vol) {}
 
-	void PrintMCResults(
-		const Vector_<pair<String_, double> >& vals,
-		const boost::optional<double>& ref_price, double spot)
-	{
-		map<long, double> outputs;
-		for (Vector_<pair<String_, double> >::const_iterator it = vals.begin(); it != vals.end(); ++it)
+		double Price(const EquityOptionData_& opt, const AnalyticResult_& result) const override;
+
+		double Price(const EquityBarrierData_& opt) const override;
+
+		Handle_<SDE_> ForTrade(_ENV, const Underlying_& trade) const override;
+
+		Model_* Mutant_Model
+			(const String_* new_name = nullptr,
+			const Slide_* slide = nullptr)
+			const;
+
+		DateTime_ VolStart() const override
 		{
-			Vector_<String_> labels = String::Split(it->first, '-', false); // cf statistics
-			long nSim = labels.size() >=2 ? String::ToInt(labels[1]) : 0; //TODO
-			outputs[nSim] = it->second;		
+			return DateTime::Minimum(); //TODO
 		}
 
-		for (map<long, double>::const_iterator it = outputs.begin(); it != outputs.end(); ++it)
-		{
-			//if (ref_price.is_initialized())
-			//	cout << it->first << " : " << (it->second - ref_price.value())*10000.0/spot << endl;
-			//else
-				cout << it->first << " : " << it->second << endl;
-		}
+		Handle_<YieldCurve_> YieldCurve(const Ccy_& ccy) const override { return yc_; }
+
+		void Write(Archive::Store_& dst) const override;
+	};
+
+	double SimpleBlackModel_::Price(const EquityOptionData_& opt, const AnalyticResult_& result) const
+	{
+		double forward = Black::ForwardValue(*(YieldCurve(opt.valueCcy_).get()),
+			spot_,
+			*(div_.get()),
+			opt.expiry_);
+		return Black::OptionValue(
+			*(yc_.get()),
+			forward, 
+			*(vol_.get()), 
+			opt.expiry_,
+			opt.delivery_, 
+			opt.strike_, 
+			opt.type_,
+			result);
 	}
+
+	double SimpleBlackModel_::Price(const EquityBarrierData_& opt) const
+	{	
+		return Black::BarrierOptionValue(
+			*(yc_.get()),
+			spot_, 
+			*(div_.get()),
+			*(vol_.get()), 
+			opt.underlying_.expiry_,
+			opt.underlying_.delivery_, 
+			opt.underlying_.strike_, 
+			opt.underlying_.type_,
+			opt.barrier_,
+			opt.barrierType_);
+	}
+
+	Model_* SimpleBlackModel_::Mutant_Model(const String_* new_name, const Slide_* slide) const //Y
+	{
+		if (new_name)
+		{
+			return new SimpleBlackModel_(*new_name, yc_, spot_, div_, vol_);
+		}
+		else if (slide)
+		{
+		}
+		return new SimpleBlackModel_(*new_name, yc_, spot_, div_, vol_);
+	}
+
+	Handle_<SDE_> SimpleBlackModel_::ForTrade(_ENV, const Underlying_& underlying) const
+	{
+		return Handle_<SDE_>(NewBlackSDE(spot_, yc_, vol_, div_));
+	}
+
+	void SimpleBlackModel_::Write(Archive::Store_& dst) const
+	{
+	}
+} //namespace
+
+
+Model_* NewBlackModel2(
+	const String_& modelName,
+	const String_& equityName,
+	Handle_<YieldCurve_> yc,
+	const double spot,
+	Handle_<Dividends_> div,
+	Handle_<BSImp::Vol_> vol)
+{
+	return new SimpleBlackModel_(modelName, yc, spot, div, vol);
+}
