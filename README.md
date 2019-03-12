@@ -1,20 +1,4 @@
-
-	Equity_::Equity_( 
-		const String_& eq_name,
-		const Date_* delivery_date,
-		const String_* delay_increment)
-		: eqName_(eq_name)
-	{
-		if (delivery_date)
-		{
-			delivery_ = *delivery_date;
-		}
-		else if (delay_increment)
-		{
-			delivery_ = *delay_increment;
-		}
-		else
-		{
-			delivery_ = Cell_(); // empty
-		}
-	}
+	shared_ptr<ValueRequestImp_> myRequest = std::dynamic_pointer_cast<ValueRequestImp_>(request);
+	REQUIRE(myRequest, "wrong store type")
+	shared_ptr<ValuesStoreImp_> myStore = std::dynamic_pointer_cast<ValuesStoreImp_>(store);
+	REQUIRE(myStore, "wrong store type")
